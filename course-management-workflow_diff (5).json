@@ -1,0 +1,527 @@
+[
+  {
+    "_id": "69e772fc223890cab4d07999",
+    "userId": "032d2a40-3ff5-4029-a44b-ed2763083257",
+    "name": "course-management-v2",
+    "variables": {},
+    "secrets": {},
+    "nodes": [
+      {
+        "position": { "x": 100, "y": 100 },
+        "width": 64, "height": 64,
+        "id": "node-list-trigger",
+        "type": "trigger",
+        "data": {
+          "description": "List all courses",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "webhook",
+          "label": "List Courses",
+          "inputs": {},
+          "outputs": { "success": { "label": "Success" }, "error": { "label": "Error" } },
+          "parameters": { "method": "get", "respondType": "deferred", "responseCode": 200, "path": "/courses/list" },
+          "defaultOutput": null
+        }
+      },
+      {
+        "position": { "x": 250, "y": 100 },
+        "width": 64, "height": 64,
+        "id": "node-list-db",
+        "type": "action",
+        "data": {
+          "description": "Fetch courses from DB",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "postgres action",
+          "label": "Postgres List",
+          "inputs": { "input": { "label": "Input" } },
+          "outputs": { "success": { "label": "Success" }, "error": { "label": "Error" } },
+          "parameters": {
+            "port": 6543, "schemaName": "public", "connectionTimeoutMillis": 5000,
+            "host": "aws-1-eu-west-2.pooler.supabase.com",
+            "user": "postgres.edqdkaelhloqiyjunxwu",
+            "password": "qIdQP5Dqmbjj3YLw",
+            "database": "postgres",
+            "tableName": "courses",
+            "operation": "Execute SQL query",
+            "executeQueryParams": {
+              "query": "SELECT c.*, COUNT(DISTINCT p.user_id) as enrolled_count FROM courses c LEFT JOIN progress p ON c.id = p.course_id GROUP BY c.id ORDER BY c.created_at DESC"
+            },
+            "replaceEmptyStringWithNull": false,
+            "selectParams": { "returnAll": false },
+            "insertParams": { "skipOnConflict": false },
+            "deleteParams": { "cascade": false }
+          }
+        }
+      },
+      {
+        "position": { "x": 400, "y": 100 },
+        "width": 64, "height": 64,
+        "id": "node-list-response",
+        "type": "action",
+        "data": {
+          "description": "Return course list",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "respond-to-webhook",
+          "label": "Response List",
+          "inputs": { "input": { "label": "Input" } },
+          "outputs": { "success": { "label": "Success" }, "error": { "label": "Error" } },
+          "parameters": {
+            "responseCode": 200,
+            "responseHeaders": {},
+            "responseBody": { "success": true, "courses": "{{outputs.Postgres List.success.rows}}" }
+          }
+        }
+      },
+      {
+        "position": { "x": 100, "y": 250 },
+        "width": 64, "height": 64,
+        "id": "node-create-trigger",
+        "type": "trigger",
+        "data": {
+          "description": "Create course with AI",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "webhook",
+          "label": "Create Course",
+          "inputs": {},
+          "outputs": { "success": { "label": "Success" }, "error": { "label": "Error" } },
+          "parameters": { "method": "post", "respondType": "deferred", "responseCode": 200, "path": "/courses/create" },
+          "defaultOutput": null
+        }
+      },
+      {
+        "position": { "x": 250, "y": 250 },
+        "width": 64, "height": 64,
+        "id": "node-extract-input",
+        "type": "action",
+        "data": {
+          "description": "Extract request data",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "function",
+          "label": "Extract Input",
+          "inputs": { "input": { "label": "Input" } },
+          "outputs": { "success": { "label": "Success" }, "error": { "label": "Error" } },
+          "parameters": {
+            "code": "const data = input;\nreturn {\n  topic: data.body.topic || 'General',\n  difficulty: data.body.difficulty || 'beginner',\n  userId: data.body.userId\n};"
+          }
+        }
+      },
+      {
+        "position": { "x": 400, "y": 250 },
+        "width": 64, "height": 64,
+        "id": "node-real-ai-llm",
+        "type": "agent-llm",
+        "data": {
+          "description": "Generate course content via Google LLM",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "google-llm",
+          "label": "AI Generator",
+          "inputs": { "input": { "label": "Input" } },
+          "outputs": { "success": { "label": "Success" }, "error": { "label": "Error" } },
+          "parameters": {
+            "model": "gemini-2.0-flash",
+            "apiKey": "YOUR_GOOGLE_API_KEY_HERE",
+            "prompt": "Create a course structure for '{{outputs.Extract Input.success.topic}}' ({{outputs.Extract Input.success.difficulty}} level). Return ONLY valid JSON: {\"title\": \"String\", \"description\": \"String\", \"difficulty\": \"String\", \"modules\": [{\"title\": \"String\", \"lessons\": [{\"title\": \"String\", \"duration\": Number, \"content\": \"String\"}]}], \"totalDuration\": Number}. Do not include markdown formatting."
+          }
+        }
+      },
+      {
+        "position": { "x": 550, "y": 250 },
+        "width": 64, "height": 64,
+        "id": "node-format-json",
+        "type": "action",
+        "data": {
+          "description": "Parse AI JSON output",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "function",
+          "label": "Format Data",
+          "inputs": { "input": { "label": "Input" } },
+          "outputs": { "success": { "label": "Success" }, "error": { "label": "Error" } },
+          "parameters": {
+            "code": "const data = input;\nlet content;\ntry {\n  const raw = typeof data.output === 'string' ? data.output.replace(/```json/g, '').replace(/```/g, '').trim() : data.output;\n  content = typeof raw === 'string' ? JSON.parse(raw) : raw;\n} catch(e) { throw new Error('Invalid JSON from AI: ' + e.message); }\n\nreturn {\n  userId: data.userId,\n  title: content.title || 'Untitled Course',\n  description: content.description || 'No description',\n  modulesJson: JSON.stringify(content.modules || []),\n  totalDuration: content.totalDuration || 0\n};"
+          }
+        }
+      },
+      {
+        "position": { "x": 700, "y": 250 },
+        "width": 64, "height": 64,
+        "id": "node-save-course",
+        "type": "action",
+        "data": {
+          "description": "Insert course into DB",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "postgres action",
+          "label": "Postgres Save",
+          "inputs": { "input": { "label": "Input" } },
+          "outputs": { "success": { "label": "Success" }, "error": { "label": "Error" } },
+          "parameters": {
+            "port": 6543, "schemaName": "public", "connectionTimeoutMillis": 5000,
+            "host": "aws-1-eu-west-2.pooler.supabase.com",
+            "user": "postgres.edqdkaelhloqiyjunxwu",
+            "password": "qIdQP5Dqmbjj3YLw",
+            "database": "postgres",
+            "tableName": "courses",
+            "operation": "Execute SQL query",
+            "executeQueryParams": {
+              "query": "INSERT INTO courses (title, description, difficulty, modules, total_duration, created_by, created_at) VALUES ('{{outputs.Format Data.success.title}}', '{{outputs.Format Data.success.description}}', '{{outputs.Extract Input.success.difficulty}}', '{{outputs.Format Data.success.modulesJson}}', {{outputs.Format Data.success.totalDuration}}, {{outputs.Format Data.success.userId}}, NOW()) RETURNING *"
+            },
+            "replaceEmptyStringWithNull": false,
+            "selectParams": { "returnAll": false },
+            "insertParams": { "skipOnConflict": false },
+            "deleteParams": { "cascade": false }
+          }
+        }
+      },
+      {
+        "position": { "x": 850, "y": 250 },
+        "width": 64, "height": 64,
+        "id": "node-create-response",
+        "type": "action",
+        "data": {
+          "description": "Return created course",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "respond-to-webhook",
+          "label": "Response Create",
+          "inputs": { "input": { "label": "Input" } },
+          "outputs": { "success": { "label": "Success" }, "error": { "label": "Error" } },
+          "parameters": {
+            "responseCode": 201,
+            "responseHeaders": {},
+            "responseBody": { "success": true, "message": "Course created", "course": "{{outputs.Postgres Save.success.rows[0]}}" }
+          }
+        }
+      },
+      {
+        "position": { "x": 100, "y": 400 },
+        "width": 64, "height": 64,
+        "id": "node-progress-trigger",
+        "type": "trigger",
+        "data": {
+          "description": "Update progress",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "webhook",
+          "label": "Update Progress",
+          "inputs": {},
+          "outputs": { "success": { "label": "Success" }, "error": { "label": "Error" } },
+          "parameters": { "method": "post", "respondType": "deferred", "responseCode": 200, "path": "/courses/progress/update" },
+          "defaultOutput": null
+        }
+      },
+      {
+        "position": { "x": 250, "y": 400 },
+        "width": 64, "height": 64,
+        "id": "node-progress-extract",
+        "type": "action",
+        "data": {
+          "description": "Extract progress data",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "function",
+          "label": "Progress Extract",
+          "inputs": { "input": { "label": "Input" } },
+          "outputs": { "success": { "label": "Success" }, "error": { "label": "Error" } },
+          "parameters": {
+            "code": "const d = input;\nreturn {\n  userId: d.body.userId,\n  courseId: d.body.courseId,\n  lessonId: d.body.lessonId,\n  completed: d.body.completed || false,\n  percent: d.body.progressPercent || 0\n};"
+          }
+        }
+      },
+      {
+        "position": { "x": 400, "y": 400 },
+        "width": 64, "height": 64,
+        "id": "node-progress-check",
+        "type": "action",
+        "data": {
+          "description": "Check existing progress",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "postgres action",
+          "label": "Postgres Check",
+          "inputs": { "input": { "label": "Input" } },
+          "outputs": { "success": { "label": "Success" }, "error": { "label": "Error" } },
+          "parameters": {
+            "port": 6543, "schemaName": "public", "connectionTimeoutMillis": 5000,
+            "host": "aws-1-eu-west-2.pooler.supabase.com",
+            "user": "postgres.edqdkaelhloqiyjunxwu",
+            "password": "qIdQP5Dqmbjj3YLw",
+            "database": "postgres",
+            "tableName": "progress",
+            "operation": "Execute SQL query",
+            "executeQueryParams": {
+              "query": "SELECT * FROM progress WHERE user_id = {{outputs.Progress Extract.success.userId}} AND course_id = {{outputs.Progress Extract.success.courseId}} LIMIT 1"
+            },
+            "replaceEmptyStringWithNull": false,
+            "selectParams": { "returnAll": false },
+            "insertParams": { "skipOnConflict": false },
+            "deleteParams": { "cascade": false }
+          }
+        }
+      },
+      {
+        "position": { "x": 550, "y": 400 },
+        "width": 64, "height": 68,
+        "id": "node-progress-if",
+        "type": "utility",
+        "data": {
+          "description": "Check if exists",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "if-else",
+          "label": "If Exists",
+          "inputs": { "input": { "label": "Input" } },
+          "outputs": { "true": { "label": "True" }, "false": { "label": "False" }, "error": { "label": "Error" } },
+          "parameters": { "condition": "{{outputs.Postgres Check.success.rowCount}} > 0" }
+        }
+      },
+      {
+        "position": { "x": 700, "y": 350 },
+        "width": 64, "height": 64,
+        "id": "node-progress-update",
+        "type": "action",
+        "data": {
+          "description": "Update progress record",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "postgres action",
+          "label": "Postgres Update",
+          "inputs": { "input": { "label": "Input" } },
+          "outputs": { "success": { "label": "Success" }, "error": { "label": "Error" } },
+          "parameters": {
+            "port": 6543, "schemaName": "public", "connectionTimeoutMillis": 5000,
+            "host": "aws-1-eu-west-2.pooler.supabase.com",
+            "user": "postgres.edqdkaelhloqiyjunxwu",
+            "password": "qIdQP5Dqmbjj3YLw",
+            "database": "postgres",
+            "tableName": "progress",
+            "operation": "Execute SQL query",
+            "executeQueryParams": {
+              "query": "UPDATE progress SET progress_percent = {{outputs.Progress Extract.success.percent}}, current_lesson_id = {{outputs.Progress Extract.success.lessonId}}, completed = {{outputs.Progress Extract.success.completed}}, last_accessed = NOW() WHERE user_id = {{outputs.Progress Extract.success.userId}} AND course_id = {{outputs.Progress Extract.success.courseId}} RETURNING *"
+            },
+            "replaceEmptyStringWithNull": false,
+            "selectParams": { "returnAll": false },
+            "insertParams": { "skipOnConflict": false },
+            "deleteParams": { "cascade": false }
+          }
+        }
+      },
+      {
+        "position": { "x": 700, "y": 450 },
+        "width": 64, "height": 64,
+        "id": "node-progress-insert",
+        "type": "action",
+        "data": {
+          "description": "Insert new progress",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "postgres action",
+          "label": "Postgres Insert",
+          "inputs": { "input": { "label": "Input" } },
+          "outputs": { "success": { "label": "Success" }, "error": { "label": "Error" } },
+          "parameters": {
+            "port": 6543, "schemaName": "public", "connectionTimeoutMillis": 5000,
+            "host": "aws-1-eu-west-2.pooler.supabase.com",
+            "user": "postgres.edqdkaelhloqiyjunxwu",
+            "password": "qIdQP5Dqmbjj3YLw",
+            "database": "postgres",
+            "tableName": "progress",
+            "operation": "Execute SQL query",
+            "executeQueryParams": {
+              "query": "INSERT INTO progress (user_id, course_id, current_lesson_id, progress_percent, completed, last_accessed) VALUES ({{outputs.Progress Extract.success.userId}}, {{outputs.Progress Extract.success.courseId}}, {{outputs.Progress Extract.success.lessonId}}, {{outputs.Progress Extract.success.percent}}, {{outputs.Progress Extract.success.completed}}, NOW()) RETURNING *"
+            },
+            "replaceEmptyStringWithNull": false,
+            "selectParams": { "returnAll": false },
+            "insertParams": { "skipOnConflict": false },
+            "deleteParams": { "cascade": false }
+          }
+        }
+      },
+      {
+        "position": { "x": 850, "y": 400 },
+        "width": 64, "height": 64,
+        "id": "node-progress-response",
+        "type": "action",
+        "data": {
+          "description": "Return progress update",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "respond-to-webhook",
+          "label": "Response Progress",
+          "inputs": { "input": { "label": "Input" } },
+          "outputs": { "success": { "label": "Success" }, "error": { "label": "Error" } },
+          "parameters": {
+            "responseCode": 200,
+            "responseHeaders": {},
+            "responseBody": { "success": true, "message": "Progress updated", "progress": "{{outputs.Postgres Update.success.rows[0]}}" }
+          }
+        }
+      },
+      {
+        "position": { "x": 100, "y": 550 },
+        "width": 64, "height": 64,
+        "id": "node-get-prog-trigger",
+        "type": "trigger",
+        "data": {
+          "description": "Get user progress",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "webhook",
+          "label": "Get Progress",
+          "inputs": {},
+          "outputs": { "success": { "label": "Success" }, "error": { "label": "Error" } },
+          "parameters": { "method": "get", "respondType": "deferred", "responseCode": 200, "path": "/courses/progress/get" },
+          "defaultOutput": null
+        }
+      },
+      {
+        "position": { "x": 250, "y": 550 },
+        "width": 64, "height": 64,
+        "id": "node-get-prog-db",
+        "type": "action",
+        "data": {
+          "description": "Fetch progress",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "postgres action",
+          "label": "Postgres Get Prog",
+          "inputs": { "input": { "label": "Input" } },
+          "outputs": { "success": { "label": "Success" }, "error": { "label": "Error" } },
+          "parameters": {
+            "port": 6543, "schemaName": "public", "connectionTimeoutMillis": 5000,
+            "host": "aws-1-eu-west-2.pooler.supabase.com",
+            "user": "postgres.edqdkaelhloqiyjunxwu",
+            "password": "qIdQP5Dqmbjj3YLw",
+            "database": "postgres",
+            "tableName": "progress",
+            "operation": "Execute SQL query",
+            "executeQueryParams": {
+              "query": "SELECT p.*, c.title as course_title, c.modules FROM progress p JOIN courses c ON p.course_id = c.id WHERE p.user_id = {{input.query.userId}} AND p.course_id = {{input.query.courseId}}"
+            },
+            "replaceEmptyStringWithNull": false,
+            "selectParams": { "returnAll": false },
+            "insertParams": { "skipOnConflict": false },
+            "deleteParams": { "cascade": false }
+          }
+        }
+      },
+      {
+        "position": { "x": 400, "y": 550 },
+        "width": 64, "height": 64,
+        "id": "node-get-prog-res",
+        "type": "action",
+        "data": {
+          "description": "Return progress",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "respond-to-webhook",
+          "label": "Response Get Prog",
+          "inputs": { "input": { "label": "Input" } },
+          "outputs": { "success": { "label": "Success" }, "error": { "label": "Error" } },
+          "parameters": {
+            "responseCode": 200,
+            "responseHeaders": {},
+            "responseBody": { "success": true, "progress": "{{outputs.Postgres Get Prog.success.rows[0]}}" }
+          }
+        }
+      },
+      {
+        "position": { "x": 100, "y": 700 },
+        "width": 64, "height": 64,
+        "id": "node-detail-trigger",
+        "type": "trigger",
+        "data": {
+          "description": "Get course details",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "webhook",
+          "label": "Course Detail",
+          "inputs": {},
+          "outputs": { "success": { "label": "Success" }, "error": { "label": "Error" } },
+          "parameters": { "method": "get", "respondType": "deferred", "responseCode": 200, "path": "/courses/detail" },
+          "defaultOutput": null
+        }
+      },
+      {
+        "position": { "x": 250, "y": 700 },
+        "width": 64, "height": 64,
+        "id": "node-detail-db",
+        "type": "action",
+        "data": {
+          "description": "Fetch course",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "postgres action",
+          "label": "Postgres Detail",
+          "inputs": { "input": { "label": "Input" } },
+          "outputs": { "success": { "label": "Success" }, "error": { "label": "Error" } },
+          "parameters": {
+            "port": 6543, "schemaName": "public", "connectionTimeoutMillis": 5000,
+            "host": "aws-1-eu-west-2.pooler.supabase.com",
+            "user": "postgres.edqdkaelhloqiyjunxwu",
+            "password": "qIdQP5Dqmbjj3YLw",
+            "database": "postgres",
+            "tableName": "courses",
+            "operation": "Execute SQL query",
+            "executeQueryParams": {
+              "query": "SELECT * FROM courses WHERE id = {{input.query.courseId}}"
+            },
+            "replaceEmptyStringWithNull": false,
+            "selectParams": { "returnAll": false },
+            "insertParams": { "skipOnConflict": false },
+            "deleteParams": { "cascade": false }
+          }
+        }
+      },
+      {
+        "position": { "x": 400, "y": 700 },
+        "width": 64, "height": 64,
+        "id": "node-detail-res",
+        "type": "action",
+        "data": {
+          "description": "Return course",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "respond-to-webhook",
+          "label": "Response Detail",
+          "inputs": { "input": { "label": "Input" } },
+          "outputs": { "success": { "label": "Success" }, "error": { "label": "Error" } },
+          "parameters": {
+            "responseCode": 200,
+            "responseHeaders": {},
+            "responseBody": { "success": true, "course": "{{outputs.Postgres Detail.success.rows[0]}}" }
+          }
+        }
+      }
+    ],
+    "connections": [
+      { "type": "directed", "id": "c1", "data": { "isAnimated": false }, "source": "node-list-trigger", "target": "node-list-db", "sourceHandle": "success", "targetHandle": "input" },
+      { "type": "directed", "id": "c2", "data": { "isAnimated": false }, "source": "node-list-db", "target": "node-list-response", "sourceHandle": "success", "targetHandle": "input" },
+      { "type": "directed", "id": "c3", "data": { "isAnimated": false }, "source": "node-create-trigger", "target": "node-extract-input", "sourceHandle": "success", "targetHandle": "input" },
+      { "type": "directed", "id": "c4", "data": { "isAnimated": false }, "source": "node-extract-input", "target": "node-real-ai-llm", "sourceHandle": "success", "targetHandle": "input" },
+      { "type": "directed", "id": "c5", "data": { "isAnimated": false }, "source": "node-real-ai-llm", "target": "node-format-json", "sourceHandle": "success", "targetHandle": "input" },
+      { "type": "directed", "id": "c6", "data": { "isAnimated": false }, "source": "node-format-json", "target": "node-save-course", "sourceHandle": "success", "targetHandle": "input" },
+      { "type": "directed", "id": "c7", "data": { "isAnimated": false }, "source": "node-save-course", "target": "node-create-response", "sourceHandle": "success", "targetHandle": "input" },
+      { "type": "directed", "id": "c8", "data": { "isAnimated": false }, "source": "node-progress-trigger", "target": "node-progress-extract", "sourceHandle": "success", "targetHandle": "input" },
+      { "type": "directed", "id": "c9", "data": { "isAnimated": false }, "source": "node-progress-extract", "target": "node-progress-check", "sourceHandle": "success", "targetHandle": "input" },
+      { "type": "directed", "id": "c10", "data": { "isAnimated": false }, "source": "node-progress-check", "target": "node-progress-if", "sourceHandle": "success", "targetHandle": "input" },
+      { "type": "directed", "id": "c11", "data": { "isAnimated": false }, "source": "node-progress-if", "target": "node-progress-update", "sourceHandle": "true", "targetHandle": "input" },
+      { "type": "directed", "id": "c12", "data": { "isAnimated": false }, "source": "node-progress-if", "target": "node-progress-insert", "sourceHandle": "false", "targetHandle": "input" },
+      { "type": "directed", "id": "c13", "data": { "isAnimated": false }, "source": "node-progress-update", "target": "node-progress-response", "sourceHandle": "success", "targetHandle": "input" },
+      { "type": "directed", "id": "c14", "data": { "isAnimated": false }, "source": "node-get-prog-trigger", "target": "node-get-prog-db", "sourceHandle": "success", "targetHandle": "input" },
+      { "type": "directed", "id": "c15", "data": { "isAnimated": false }, "source": "node-get-prog-db", "target": "node-get-prog-res", "sourceHandle": "success", "targetHandle": "input" },
+      { "type": "directed", "id": "c16", "data": { "isAnimated": false }, "source": "node-detail-trigger", "target": "node-detail-db", "sourceHandle": "success", "targetHandle": "input" },
+      { "type": "directed", "id": "c17", "data": { "isAnimated": false }, "source": "node-detail-db", "target": "node-detail-res", "sourceHandle": "success", "targetHandle": "input" }
+    ],
+    "status": "stopped",
+    "id": "new-course-mgmt-id-999",
+    "createdAt": 1776951147357,
+    "updatedAt": "2026-04-23T15:00:00.000Z",
+    "previousStatus": "running"
+  }
+]
