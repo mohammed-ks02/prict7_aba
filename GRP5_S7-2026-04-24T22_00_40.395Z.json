@@ -1,0 +1,2356 @@
+[
+  {
+    "_id": "69eb31728b6bd30a907fffca",
+    "userId": "032d2a40-3ff5-4029-a44b-ed2763083257",
+    "name": "GRP5_S7",
+    "variables": {
+      "test": {
+        "test": "hello"
+      }
+    },
+    "secrets": {},
+    "nodes": [
+      {
+        "position": {
+          "x": 430.4170739460401,
+          "y": 644.3952627358307
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "050c74a4-0b14-4d66-81ec-772bb6f48162",
+        "type": "action",
+        "data": {
+          "description": "Execute PostgreSQL operations (select, insert, update, delete)",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "postgres action",
+          "label": "Postgres Action",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "port": 6543,
+            "schemaName": "public",
+            "connectionTimeoutMillis": 5000,
+            "tableName": "check",
+            "password": "qIdQP5Dqmbjj3YLw",
+            "database": "postgres",
+            "user": "postgres.bwxwizpkdfweathsvqks",
+            "host": "aws-1-eu-central-1.pooler.supabase.com",
+            "operation": "Execute SQL query",
+            "executeQueryParams": {
+              "query": "SELECT EXTRACT(EPOCH FROM created_at)::INTEGER AS last_pulse  FROM \"check\" ORDER BY created_at DESC limit 1;;"
+            }
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 667.3922375965586,
+          "y": 637.2270301614311
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "71318faf-3ff6-4c82-bbdd-8d468b7bdadd",
+        "type": "action",
+        "data": {
+          "description": "Executes custom JavaScript code on the input data.",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "function",
+          "label": "Function",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "code": "// ===== 1. SAFE INPUT =====\nconst lastPulse = input.rows?.[0]?.last_pulse;\n\n// if no data → consider system DOWN\nif (!lastPulse) {\n  return {\n    status: \"DOWN\",\n    expired: true,\n    message: \"❌ No pulse data found (G1 may be down)\",\n    alert: \"RED\"\n  };\n}\n\n// ===== 2. TIME CALCULATION =====\nconst now = Math.floor(Date.now() / 1000); // seconds\n\n// handle both seconds & milliseconds automatically\nconst normalizedLastPulse =\n  lastPulse > 1e12 ? Math.floor(lastPulse / 1000) : lastPulse;\n\nconst diff = now - normalizedLastPulse;\n\n// ===== 3. WATCHDOG LOGIC =====\nconst THRESHOLD = 15 * 60; // 15 minutes\nconst isExpired = diff >= THRESHOLD;\n\n// ===== 4. FORMAT FUNCTIONS =====\nconst formatDate = (ts) =>\n  new Date(ts * 1000).toISOString().replace('T', ' ').slice(0, 19);\n\nconst hours = Math.floor(diff / 3600);\nconst minutes = Math.floor((diff % 3600) / 60);\n\n// ===== 5. STATUS =====\nconst status = isExpired ? \"DOWN\" : \"ACTIVE\";\nconst alertLevel = isExpired ? \"RED\" : \"NONE\";\n\n// ===== 6. EMAIL CONTENT =====\nconst emailContent = `\n<!DOCTYPE html>\n<html>\n  <body style=\"font-family: Arial, sans-serif; background-color:#f4f4f4; padding:20px;\">\n    <div style=\"max-width:600px; margin:auto; background:white; padding:20px; border-radius:10px; box-shadow:0 0 10px rgba(0,0,0,0.1);\">\n      \n      <h2 style=\"color:#333;\">⏱️ Pulse Status</h2>\n      \n      <p>Hello,</p>\n      <p>Here is the current pulse status of <b>G1 Gateway</b>:</p>\n\n      <table style=\"width:100%; border-collapse: collapse; margin-top:15px;\">\n        <tr>\n          <td style=\"padding:8px; font-weight:bold;\">Last Pulse Time:</td>\n          <td style=\"padding:8px;\">${formatDate(normalizedLastPulse)}</td>\n        </tr>\n        <tr>\n          <td style=\"padding:8px; font-weight:bold;\">Current Time:</td>\n          <td style=\"padding:8px;\">${formatDate(now)}</td>\n        </tr>\n        <tr>\n          <td style=\"padding:8px; font-weight:bold;\">Time Since Last Pulse:</td>\n          <td style=\"padding:8px;\">${hours}h ${minutes}min</td>\n        </tr>\n        <tr>\n          <td style=\"padding:8px; font-weight:bold;\">Status:</td>\n          <td style=\"padding:8px; color:${isExpired ? 'red' : 'green'}; font-weight:bold;\">\n            ${isExpired ? '❌ DOWN (no activity > 15 minutes)' : '✅ ACTIVE'}\n          </td>\n        </tr>\n      </table>\n\n      ${\n        isExpired\n          ? `<p style=\"color:red; margin-top:20px;\">\n               🚨 Immediate action required: Possible failure in G1 Gateway.\n             </p>`\n          : ''\n      }\n\n      <p style=\"margin-top:20px;\">Best regards,<br/>Sentinel Tower (G5)</p>\n\n    </div>\n  </body>\n</html>\n`;\n\n// ===== 7. Slack CONTENT =====\nconst slackMessage = `\n🚨 *ALERTE CRITIQUE – G1 Gateway DOWN*\n\n• Status: ❌ DOWN  \n• Last Pulse: ${formatDate(normalizedLastPulse)}  \n• Delay: ${hours}h ${minutes}min  \n\n⚠️ No activity detected for more than 15 minutes.\n\n👉 Action required: Check G1 Gateway immediately.\n\n— Sentinel Tower (G5)\n`;\n\n// ===== 8. FINAL OUTPUT =====\nreturn {\n  status,\n  alert: alertLevel,\n  expired: isExpired,\n  lastPulseFormatted: formatDate(normalizedLastPulse),\n  nowFormatted: formatDate(now),\n  diffReadable: `${hours}h ${minutes}min`,\n  emailContent,\n  slackMessage\n};"
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 134.81365476400669,
+          "y": 474.6926669000776
+        },
+        "width": 256,
+        "height": 100,
+        "dragHandle": ".drag-handle__custom",
+        "selected": false,
+        "id": "7994f0c3-f6cf-4553-aaa6-e6fd35527bfa",
+        "type": "display",
+        "data": {
+          "description": "Logs the input data to the console.",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "media-log",
+          "label": "Log",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": false
+            }
+          },
+          "parameters": {},
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 504.6353920009067,
+          "y": 513.8481811450781
+        },
+        "width": 256,
+        "height": 100,
+        "dragHandle": ".drag-handle__custom",
+        "selected": false,
+        "id": "f786ff80-03a7-433a-a5d3-a09687b2b1c3",
+        "type": "display",
+        "data": {
+          "description": "Logs the input data to the console.",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "media-log",
+          "label": "Log1",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": false
+            }
+          },
+          "parameters": {},
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 935.5907936882379,
+          "y": 587.5171260865974
+        },
+        "width": 64,
+        "height": 68,
+        "selected": false,
+        "id": "7eff9067-4479-4ec2-80e3-fe134f5b8590",
+        "type": "utility",
+        "data": {
+          "description": "Executes different branches based on a condition",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "if-else",
+          "label": "If-Else",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "true": {
+              "label": "True",
+              "isConnectable": null
+            },
+            "false": {
+              "label": "False",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "condition": "input.alert ==! \"NONE\";"
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 1300.855451147338,
+          "y": 394.91073980194767
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "07c123e2-9db4-4e09-b1ce-584e64bdaf42",
+        "type": "action",
+        "data": {
+          "description": "Consolidated Gmail operations (send/get/delete/move/markUnread/createLabel)",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "gmail",
+          "label": "Gmail",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "operation": "send",
+            "clientId": "562397994389-7u87s5j7pn8kdv3rd35sie07ul11it1k.apps.googleusercontent.com",
+            "clientSecret": "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",
+            "refreshToken": "1//04uM87c932hnTCgYIARAAGAQSNwF-L9IrwcNtDjDojoYJNq6Pyu7p0zulQri64Wy50WUZg_oSi1uTSHb-fjz-vJ0HPhjdBF9GUws",
+            "to": "ayoubvufci@gmail.com",
+            "subject": "expired",
+            "text": "[[ outputs.Function.success.emailContent ]]"
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 1504.0163388268365,
+          "y": 550.9713561698538
+        },
+        "width": 256,
+        "height": 100,
+        "dragHandle": ".drag-handle__custom",
+        "selected": false,
+        "id": "556293bc-1012-443c-bde8-34dd1d900356",
+        "type": "display",
+        "data": {
+          "description": "Logs the input data to the console.",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "media-log",
+          "label": "Log2",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": false
+            }
+          },
+          "parameters": {},
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 190.12129047320434,
+          "y": 633.6948860103055
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "7005a25d-63a2-4c04-bb96-004e264f0de3",
+        "type": "trigger",
+        "data": {
+          "description": "Triggers the workflow manually via a TCP message.",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "manual-trigger",
+          "label": "Manual Trigger",
+          "inputs": {},
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {},
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 1333.5559341519863,
+          "y": 485.679336904003
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "12cb2a3d-0b17-4a62-aca8-1ed5a54b6297",
+        "type": "action",
+        "data": {
+          "description": "Interact with Slack action",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "slack-action",
+          "label": "Slack Action",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "token": "xoxb-5660622898066-10703491267667-DHm4kT5iqhXv6qrETfkMzejA",
+            "operation": "message",
+            "messageOperation": "send",
+            "messageChannelId": "course-tuto",
+            "text": "[[ outputs.Function.success.slackMessage ]]"
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 226.8134087626379,
+          "y": 835.6092269024714
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "dd0857c2-83a2-4c77-8eb5-2edeac87d7d0",
+        "type": "trigger",
+        "data": {
+          "description": "Triggers workflow on incoming HTTP requests",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "webhook",
+          "label": "Webhook",
+          "inputs": {},
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "method": "all",
+            "respondType": "immediate",
+            "responseCode": 200,
+            "path": "/errors"
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": -31.354874821287844,
+          "y": 774.6283304154111
+        },
+        "width": 256,
+        "height": 100,
+        "dragHandle": ".drag-handle__custom",
+        "selected": false,
+        "id": "a632d705-effc-40ef-9413-608b0ca59d73",
+        "type": "display",
+        "data": {
+          "description": "Logs the input data to the console.",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "media-log",
+          "label": "Log3",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": false
+            }
+          },
+          "parameters": {},
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 507.3933564478933,
+          "y": 812.5531200306363
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "5cf7c78f-9504-4153-a201-8adf5c8eefc7",
+        "type": "agent",
+        "data": {
+          "description": "An AI agent that can perform tasks using nodes as tools based on user input.",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "agent",
+          "label": "Agent",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "systemPrompt": "You are an AI Error Analysis Agent for a hospital infrastructure monitoring system (Groupe 5 - Sentinel Tower).\n\nYour role is to analyze incoming error messages from different systems (G1, G2, G3, G4).\n\nYou must:\n1. Classify the error as either:\n   - \"Human Error\" (bad input, validation issue, user mistake)\n   - \"Technical Error\" (server issue, timeout, database failure, API down)\n\n2. Provide a short and clear recommendation to fix the issue.\n\n3. Identify the severity level:\n   - \"LOW\" (minor issue, no impact)\n   - \"MEDIUM\" (affects functionality)\n   - \"HIGH\" (critical failure, system down)\n\n4. Return ONLY a valid JSON object with NO extra text.\n\nJSON format to follow strictly:\n{\n  \"error_type\": \"Human Error or Technical Error\",\n  \"severity\": \"LOW or MEDIUM or HIGH\",\n  \"message\": \"short explanation of the error\",\n  \"recommendation\": \"clear action to resolve the issue\"\n}\n\nImportant rules:\n- Do NOT return anything outside JSON\n- Do NOT add comments\n- Keep responses concise and professional\n\nNow analyze this error:\n\nError message: input.body.error_message\nSource: input.body.source",
+            "threadId": "agent"
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 572.2149667745675,
+          "y": 965.9456696067718
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "82e0d67d-d4a6-4fee-9f0b-122bb63ffebb",
+        "type": "agent-llm",
+        "data": {
+          "description": "A node that uses Google's LLM models.",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "google-llm",
+          "label": "Google LLM",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "model": "gemini-3.1-flash-lite-preview",
+            "apiKey": "AIzaSyDpGCvwledGqswzoMfEdrZpKcDyZMcHrDU"
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 715.4929243896765,
+          "y": 839.7169079263329
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "9aa013c5-5ac1-44fd-9b0e-9eba20ae3aa9",
+        "type": "action",
+        "data": {
+          "description": "Executes custom JavaScript code on the input data.",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "function",
+          "label": "Function1",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "code": "const jsonData = JSON.parse(input);\njsonData.timestamp = new Date().toLocaleString(\"en-GB\", {\n  timeZone: \"Africa/Casablanca\",\n  year: \"numeric\",\n  month: \"2-digit\",\n  day: \"2-digit\",\n  hour: \"2-digit\",\n  minute: \"2-digit\",\n  second: \"2-digit\",\n  hour12: false\n});\n\nreturn jsonData;"
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 785.0348949559641,
+          "y": 905.3927465312048
+        },
+        "width": 256,
+        "height": 100,
+        "dragHandle": ".drag-handle__custom",
+        "selected": false,
+        "id": "709c2771-d1af-4b06-96c1-ccf4b657882f",
+        "type": "display",
+        "data": {
+          "description": "Logs the input data to the console.",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "media-log",
+          "label": "Log4",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": false
+            }
+          },
+          "parameters": {},
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 997.7441917102631,
+          "y": 755.1397883497939
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "be00e544-f7f4-47ab-a312-3cc9d73c3026",
+        "type": "action",
+        "data": {
+          "description": "Value operations for Google Sheets (append/update/get)",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "google-sheets.values",
+          "label": "Google Sheets - Values",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "operation": "append",
+            "clientId": "920206420305-m366fb8s4ds6gub0iqtb4bphqjimlu2o.apps.googleusercontent.com",
+            "clientSecret": "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",
+            "refreshToken": "1//04PcayG-34GMpCgYIARAAGAQSNwF-L9Iruk83oMF6vHwA9sZRfoVkdAhSYAbweU6oRG2S6Oh_b2hKzM1EgJxkkFBdH8ZuNsYJ7MA",
+            "spreadsheetId": "1J48EEczpKpLoKX9hM2uBzaICAtCQzGqB_zZMrNCPaAk",
+            "range": "errors",
+            "values": [
+              "{{outputs.Webhook.success.body.source}}",
+              "{{outputs.Function1.success.error_type}}",
+              "{{outputs.Function1.success.severity}}",
+              "{{outputs.Function1.success.message}}",
+              "{{outputs.Function1.success.recommendation}}",
+              "{{outputs.Function1.success.timestamp}}"
+            ]
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 1042.063606819313,
+          "y": 875.455500911182
+        },
+        "width": 64,
+        "height": 86,
+        "selected": false,
+        "id": "718f7fa1-796c-4d5f-8c57-d29603ccfec0",
+        "type": "utility",
+        "data": {
+          "description": "Multi-way branching by value. Example: value 'admin' → routes to 'admin' case, 'user' → 'user' case, else → default",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "switch",
+          "label": "Severity Check",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "case-1": {
+              "label": "case-1",
+              "isConnectable": null
+            },
+            "case-2": {
+              "label": "case-2",
+              "isConnectable": null
+            },
+            "default": {
+              "label": "default",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "cases": [],
+            "conditions": [
+              {
+                "outputId": "case-1",
+                "condition": "input.severity == \"HIGH\""
+              },
+              {
+                "outputId": "case-2",
+                "condition": "input.severity == \"MEDIUM\""
+              }
+            ]
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 1483.397471074485,
+          "y": 710.584628292747
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "16c809a1-d453-4db2-a282-82f82117c459",
+        "type": "action",
+        "data": {
+          "description": "Interact with Slack action",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "slack-action",
+          "label": "HIGH severity",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "token": "xoxb-5660622898066-10703491267667-DHm4kT5iqhXv6qrETfkMzejA",
+            "operation": "message",
+            "messageOperation": "send",
+            "messageChannelId": "course-tuto",
+            "text": "🚨 *CRITICAL ALERT – SYSTEM DOWN*  • Source: {{outputs.Webhook.success.body.source}} • Issue: {{outputs.Function1.success.message}} • Severity: HIGH  👉 Immediate action required.  — Sentinel Tower (G5)"
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 1508.0738211149146,
+          "y": 875.4486645277277
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "cc29f4e6-f41c-4c2a-928c-f51c07014257",
+        "type": "action",
+        "data": {
+          "description": "Interact with Slack action",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "slack-action",
+          "label": "MEDIUM  severity",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "token": "xoxb-5660622898066-10703491267667-DHm4kT5iqhXv6qrETfkMzejA",
+            "operation": "message",
+            "messageOperation": "send",
+            "messageChannelId": "course-tuto",
+            "text": "⚠️ *WARNING – SYSTEM ANOMALY*  • Source: {{outputs.Webhook.success.body.source}} • Issue: {{outputs.Function1.success.message}} • Severity: MEDIUM  Monitor recommended.  — G5 Sentinel Tower"
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 1636.399049046094,
+          "y": 795.5783312002204
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "c9a27c94-ed28-4147-a29f-cb3ee86bd759",
+        "type": "action",
+        "data": {
+          "description": "Consolidated Gmail operations (send/get/delete/move/markUnread/createLabel)",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "gmail",
+          "label": "Gmail (HIGH severity)",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "operation": "send",
+            "clientId": "920206420305-m366fb8s4ds6gub0iqtb4bphqjimlu2o.apps.googleusercontent.com",
+            "clientSecret": "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",
+            "refreshToken": "1//04PcayG-34GMpCgYIARAAGAQSNwF-L9Iruk83oMF6vHwA9sZRfoVkdAhSYAbweU6oRG2S6Oh_b2hKzM1EgJxkkFBdH8ZuNsYJ7MA",
+            "to": "Mohamedkassi167@gmail.com",
+            "subject": "CRITICAL ALERT  G5 Sentinel Tower",
+            "text": "<!DOCTYPE html> <html>   <body style=\"font-family: Arial, sans-serif; background-color:#f4f4f4; padding:20px;\">     <div style=\"max-width:600px; margin:auto; background:white; padding:20px; border-radius:10px; border-left:8px solid red;\">        <h2 style=\"color:red;\">🚨 CRITICAL ALERT – SYSTEM FAILURE</h2>        <p><b>A critical issue has been detected in the hospital infrastructure.</b></p>        <table style=\"width:100%; margin-top:15px; border-collapse:collapse;\">         <tr><td><b>Source:</b></td><td>{{outputs.Webhook.success.body.source}}</td></tr>         <tr><td><b>Error Type:</b></td><td>{{outputs.Function1.success.error_type}}</td></tr>         <tr><td><b>Message:</b></td><td>{{outputs.Function1.success.message}}</td></tr>         <tr><td><b>Recommendation:</b></td><td>{{outputs.Function1.success.recommendation}}</td></tr>         <tr><td><b>Time:</b></td><td>{{outputs.Function1.success.timestamp}}</td></tr>       </table>        <p style=\"margin-top:20px; color:red;\">         ⚠️ Immediate action required to restore system stability.       </p>        <p>— Sentinel Tower (G5)</p>      </div>   </body> </html>",
+            "from": "Mohamedkassi167@gmail.com"
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 294.82544418775456,
+          "y": 1308.7734274221125
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "e24e93cf-e058-4e5e-bf71-60b8526c1eeb",
+        "type": "trigger",
+        "data": {
+          "description": "Triggers workflow on incoming HTTP requests",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "webhook",
+          "label": "Webhook_start",
+          "inputs": {},
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "method": "post",
+            "respondType": "immediate",
+            "responseCode": 200,
+            "path": "/start"
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 550.2617061731468,
+          "y": 1489.3153914165566
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "ed9a100d-4030-4367-a6e3-c1e2611044f8",
+        "type": "trigger",
+        "data": {
+          "description": "Triggers workflow on incoming HTTP requests",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "webhook",
+          "label": "Webhook_end",
+          "inputs": {},
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "method": "post",
+            "respondType": "immediate",
+            "responseCode": 200,
+            "path": "/end"
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 936.3391547772247,
+          "y": 1393.6917399144543
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "4419f62e-0805-4e8c-8477-147ef13f21a9",
+        "type": "utility",
+        "data": {
+          "description": "Merges multiple branches. Example: waits for all 2 branches → merges results, or continues when first completes (mode dependent)",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "merge",
+          "label": "Merge",
+          "inputs": {
+            "input1": {
+              "label": "Input1"
+            },
+            "input2": {
+              "label": "Input2"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "inputCount": 2,
+            "strategy": "zip"
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 584.7097620351669,
+          "y": 1603.1205991469487
+        },
+        "width": 256,
+        "height": 100,
+        "dragHandle": ".drag-handle__custom",
+        "selected": false,
+        "id": "0d00a4c6-e11b-45dd-8fc7-a8282ffe337f",
+        "type": "display",
+        "data": {
+          "description": "Logs the input data to the console.",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "media-log",
+          "label": "Log5",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": false
+            }
+          },
+          "parameters": {},
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 250.54091029524716,
+          "y": 1472.2504559875313
+        },
+        "width": 256,
+        "height": 100,
+        "dragHandle": ".drag-handle__custom",
+        "selected": false,
+        "id": "967b3e23-c11b-4b47-b6a0-e992170b8606",
+        "type": "display",
+        "data": {
+          "description": "Logs the input data to the console.",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "media-log",
+          "label": "Log6",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": false
+            }
+          },
+          "parameters": {},
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 944.033099290236,
+          "y": 1549.122911683934
+        },
+        "width": 256,
+        "height": 100,
+        "dragHandle": ".drag-handle__custom",
+        "selected": false,
+        "id": "0f181c83-9f08-4838-9bea-9aec56fb3cea",
+        "type": "display",
+        "data": {
+          "description": "Logs the input data to the console.",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "media-log",
+          "label": "Log7",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": false
+            }
+          },
+          "parameters": {},
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 1193.389741047719,
+          "y": 1402.7332713990966
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "cf51d51a-483d-4953-8415-5ba7bea9f73a",
+        "type": "action",
+        "data": {
+          "description": "Executes custom JavaScript code on the input data.",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "function",
+          "label": "Function2",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "code": "const startTime = input[0];\nconst endTime = input[1];\n\n// ===== PARSE =====\nconst start = new Date(startTime);\nconst end = new Date(endTime);\n\n// ===== CALCULATION =====\nconst durationMinutes = (end - start) / (1000 * 60);\n\n// ===== RULE =====\nconst THRESHOLD = 45;\nconst isLate = durationMinutes > THRESHOLD;\n\n// ===== STATUS =====\nconst status = isLate ? \"DELAY_INACCEPTABLE\" : \"OK\";\n\n// ===== OUTPUT =====\nreturn {\n  startTime,\n  endTime,\n  durationMinutes: Math.round(durationMinutes),\n  status,\n  threshold: THRESHOLD,\n  isLate\n};"
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 668.0878838993749,
+          "y": 1371.758002995998
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "2a2196b5-9848-424b-a5bf-d3126b0d3b67",
+        "type": "action",
+        "data": {
+          "description": "Executes custom JavaScript code on the input data.",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "function",
+          "label": "Function3",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "code": "return input.body.start_time\n"
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 756.0102299645123,
+          "y": 1463.2714323712428
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "1ef5caed-706b-4c22-a92e-51447abf015f",
+        "type": "action",
+        "data": {
+          "description": "Executes custom JavaScript code on the input data.",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "function",
+          "label": "Function4",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "code": "return input.body.end_time\n"
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 1204.481542954022,
+          "y": 1529.3577651047426
+        },
+        "width": 256,
+        "height": 100,
+        "dragHandle": ".drag-handle__custom",
+        "selected": false,
+        "id": "8dd2d08f-c5e8-4d4b-a987-6fc3a68ca811",
+        "type": "display",
+        "data": {
+          "description": "Logs the input data to the console.",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "media-log",
+          "label": "Log8",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": false
+            }
+          },
+          "parameters": {},
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 243.8273195863597,
+          "y": 1175.9462789963588
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "e87ed451-8e8a-4e1f-b039-15c19bd54aa4",
+        "type": "trigger",
+        "data": {
+          "description": "Triggers workflow on incoming HTTP requests",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "webhook",
+          "label": "Webhook_bank",
+          "inputs": {},
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "method": "all",
+            "respondType": "immediate",
+            "responseCode": 200,
+            "path": "/bank"
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 373.8068280660227,
+          "y": 1116.2279448733736
+        },
+        "width": 256,
+        "height": 100,
+        "dragHandle": ".drag-handle__custom",
+        "selected": false,
+        "id": "679d8f4e-ed5d-4865-ad1a-571d476d7b5d",
+        "type": "display",
+        "data": {
+          "description": "Logs the input data to the console.",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "media-log",
+          "label": "Log9",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": false
+            }
+          },
+          "parameters": {},
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 720.2880897203048,
+          "y": 1185.837078912334
+        },
+        "width": 64,
+        "height": 68,
+        "selected": false,
+        "id": "e1e2bcf9-f34e-4fab-b435-1efccf83d127",
+        "type": "utility",
+        "data": {
+          "description": "Executes different branches based on a condition",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "if-else",
+          "label": "If-Else1",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "true": {
+              "label": "True",
+              "isConnectable": null
+            },
+            "false": {
+              "label": "False",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "condition": "input.status === \"pending_payment\""
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 1234.669716192821,
+          "y": 1075.805011170361
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "c9c91be7-97f8-4420-956f-a1a19a7f5d9e",
+        "type": "action",
+        "data": {
+          "description": "Value operations for Google Sheets (append/update/get)",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "google-sheets.values",
+          "label": "Paymant Down BACKUP",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "operation": "append",
+            "clientId": "920206420305-m366fb8s4ds6gub0iqtb4bphqjimlu2o.apps.googleusercontent.com",
+            "clientSecret": "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",
+            "refreshToken": "1//04PcayG-34GMpCgYIARAAGAQSNwF-L9Iruk83oMF6vHwA9sZRfoVkdAhSYAbweU6oRG2S6Oh_b2hKzM1EgJxkkFBdH8ZuNsYJ7MA",
+            "spreadsheetId": "1J48EEczpKpLoKX9hM2uBzaICAtCQzGqB_zZMrNCPaAk",
+            "range": "Failover Backup",
+            "values": [
+              "{{outputs.Function6.success.patient_id}}",
+              "{{outputs.Function6.success.transaction_id}}",
+              "{{outputs.Function6.success.status}}",
+              "{{outputs.Function6.success.source}}",
+              "{{outputs.Function6.success.fallback_mode}}",
+              "{{outputs.Function6.success.detected_at}}",
+              "{{outputs.Function6.success.note}}"
+            ]
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 962.9170799426444,
+          "y": 1142.611357258682
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "b96c2e9e-d661-42a5-bd79-f163f5b9129e",
+        "type": "action",
+        "data": {
+          "description": "Executes custom JavaScript code on the input data.",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "function",
+          "label": "Function6",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "code": "return {\n  patient_id: input.patient_id,\n  transaction_id: input.transaction_id,\n  status: input.status,\n  source: input.source,\n  fallback_mode: \"G3_DOWN\",\n  detected_at: new Date().toISOString(),\n  note: \"Failover triggered\"\n};"
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 1234.0633847185063,
+          "y": 1260.6736853948091
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "152a493b-bc92-4b21-9f88-7fd4faccc12d",
+        "type": "action",
+        "data": {
+          "description": "Value operations for Google Sheets (append/update/get)",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "google-sheets.values",
+          "label": "transactions réussies",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "operation": "append",
+            "clientId": "562397994389-7u87s5j7pn8kdv3rd35sie07ul11it1k.apps.googleusercontent.com",
+            "clientSecret": "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",
+            "refreshToken": "1//04uM87c932hnTCgYIARAAGAQSNwF-L9IrwcNtDjDojoYJNq6Pyu7p0zulQri64Wy50WUZg_oSi1uTSHb-fjz-vJ0HPhjdBF9GUws",
+            "spreadsheetId": "1e11Z5iM1MGfakGGCoFscEp9DUtbGmyWd6XFrUZYq53E",
+            "range": "A2:D2",
+            "values": [
+              "{{outputs.Function7.success.patient_id}}",
+              "{{outputs.Function7.success.transaction_id}}",
+              "{{outputs.Function7.success.status}}",
+              "{{outputs.Function7.success.source}}",
+              "{{outputs.Function7.success.fallback_mode}}",
+              "{{outputs.Function7.success.processed_at}}",
+              "{{outputs.Function7.success.note}}"
+            ]
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 526.3919002467055,
+          "y": 1209.5525100409673
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "d17c483f-1c6e-4aee-b232-341fa1e5d80d",
+        "type": "action",
+        "data": {
+          "description": "Executes custom JavaScript code on the input data.",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "function",
+          "label": "Function5",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "code": "return input.body\n"
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 980.0866796415105,
+          "y": 1257.3086971206021
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "9523fed7-56ce-4124-ac5f-b78047af5714",
+        "type": "action",
+        "data": {
+          "description": "Executes custom JavaScript code on the input data.",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "function",
+          "label": "Function7",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "code": "return {\n  patient_id: input.patient_id,\n  transaction_id: input.transaction_id,\n  status: input.status,\n  source: input.source,\n  processed_at: new Date().toISOString(),\n  note: \"Successful transaction - audit log\"\n};"
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 1319.388503273617,
+          "y": 1157.7368740698103
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "0c56c9f6-9ba2-4303-8c15-c40871767f8b",
+        "type": "action",
+        "data": {
+          "description": "Consolidated Gmail operations (send/get/delete/move/markUnread/createLabel)",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "gmail",
+          "label": "Paymant Down Email",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "operation": "send",
+            "clientId": "562397994389-7u87s5j7pn8kdv3rd35sie07ul11it1k.apps.googleusercontent.com",
+            "clientSecret": "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",
+            "refreshToken": "1//04uM87c932hnTCgYIARAAGAQSNwF-L9IrwcNtDjDojoYJNq6Pyu7p0zulQri64Wy50WUZg_oSi1uTSHb-fjz-vJ0HPhjdBF9GUws",
+            "to": "ayoubvufci@gmail.com",
+            "text": "<!DOCTYPE html> <html>   <body style=\"font-family: Arial, sans-serif; background:#f4f4f4; padding:20px;\">          <div style=\"max-width:600px; margin:auto; background:white; padding:20px; border-radius:10px;\">        <h2 style=\"color:#d9534f;\">🚨 G5 Sentinel Alert</h2>        <p><b>System Event Detected</b></p>        <table style=\"width:100%; border-collapse:collapse; margin-top:15px;\">                  <tr>           <td><b>Patient ID</b></td>           <td>{{outputs.Function6.success.patient_id}}</td>         </tr>          <tr>           <td><b>Transaction ID</b></td>           <td>{{outputs.Function6.success.transaction_id}}</td>         </tr>          <tr>           <td><b>Status</b></td>           <td>{{outputs.Function6.success.status}}</td>         </tr>          <tr>           <td><b>Source</b></td>           <td>{{outputs.Function6.success.source}}</td>         </tr>          <tr>           <td><b>Fallback Mode</b></td>           <td>{{outputs.Function6.success.fallback_mode}}</td>         </tr>          <tr>           <td><b>Detected At</b></td>           <td>{{outputs.Function6.success.detected_at}}</td>         </tr>          <tr>           <td><b>Note</b></td>           <td>{{outputs.Function6.success.note}}</td>         </tr>        </table>        <hr style=\"margin-top:20px;\">        <p style=\"color:#777;\">         Sentinel Tower (G5) – Crisis Governance System       </p>      </div>    </body> </html>",
+            "subject": "Failover / Audit Alert"
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 1006.7378396856377,
+          "y": 1042.325455312469
+        },
+        "width": 64,
+        "height": 68,
+        "selected": false,
+        "id": "q3g3jchg4hld8m9dtooi3cgp",
+        "type": "utility",
+        "data": {
+          "description": "Executes different branches based on a condition",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "if-else",
+          "label": "If-Else2",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "true": {
+              "label": "True",
+              "isConnectable": null
+            },
+            "false": {
+              "label": "False",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "condition": "input.severity == \"LOW\";"
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 1475.5229766719624,
+          "y": 1058.3685101308715
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "iu1bw0pnlozoux28ylg33k8l",
+        "type": "action",
+        "data": {
+          "description": "Interact with Slack action",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "slack-action",
+          "label": "LOW severity",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "token": "xoxb-5660622898066-10703491267667-DHm4kT5iqhXv6qrETfkMzejA",
+            "operation": "message",
+            "messageOperation": "send",
+            "messageChannelId": "course-tuto",
+            "text": "⚠️ *WARNING – SYSTEM ANOMALY*  • Source: {{outputs.Webhook.success.body.source}} • Issue: {{outputs.Function1.success.message}} • Severity: MEDIUM  Monitor recommended.  — G5 Sentinel Tower"
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 193.49790570806312,
+          "y": 1841.3212629820011
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "qe4xc8o53cqu0uptzk9gtnn2",
+        "type": "trigger",
+        "data": {
+          "description": "Executes a task on a schedule",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "cron",
+          "label": "Cron",
+          "inputs": {},
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "schedule": "0 5 * * *"
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 228.4018758177748,
+          "y": 1691.467138594846
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "dktbk71q760fyr3arz54m0c2",
+        "type": "trigger",
+        "data": {
+          "description": "Triggers workflow on incoming HTTP requests",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "webhook",
+          "label": "Webhook Trigger",
+          "inputs": {},
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "method": "post",
+            "respondType": "immediate",
+            "responseCode": 200,
+            "path": "/csv"
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 481.52654242501126,
+          "y": 1726.3286196245851
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "vcd9ocq63bmgr62p0wvmkzl4",
+        "type": "action",
+        "data": {
+          "description": "Executes custom JavaScript code on the input data.",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "function",
+          "label": "Function8",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "code": "const data = input.body;\n\nconst patient_id = data.patient_id;\nconst transaction_id = data.transaction_id;\nconst Status = data.body.status;\nconst Source = data.source;\n// Write your code here\nreturn {patient_id,transaction_id,status,Source};"
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 727.0726261996957,
+          "y": 1711.1714539594811
+        },
+        "width": 64,
+        "height": 64,
+        "selected": false,
+        "id": "htujs73hbb1qcm4decbes1nm",
+        "type": "action",
+        "data": {
+          "description": "Value operations for Google Sheets (append/update/get)",
+          "showRunningStatus": true,
+          "_morphing": false,
+          "name": "google-sheets.values",
+          "label": "Google Sheets - Values1",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": null
+            },
+            "error": {
+              "label": "Error",
+              "isConnectable": null
+            }
+          },
+          "parameters": {
+            "operation": "append",
+            "clientId": "920206420305-m366fb8s4ds6gub0iqtb4bphqjimlu2o.apps.googleusercontent.com",
+            "clientSecret": "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",
+            "refreshToken": "1//04PcayG-34GMpCgYIARAAGAQSNwF-L9Iruk83oMF6vHwA9sZRfoVkdAhSYAbweU6oRG2S6Oh_b2hKzM1EgJxkkFBdH8ZuNsYJ7MA",
+            "spreadsheetId": "1J48EEczpKpLoKX9hM2uBzaICAtCQzGqB_zZMrNCPaAk",
+            "values": [
+              "{{outputs.Format for Sheet.success.patient_id}}",
+              "{{outputs.Format for Sheet.success.transaction_id}}",
+              "{{outputs.Format for Sheet.success.status}}",
+              "{{outputs.Format for Sheet.success.source}}"
+            ],
+            "range": "csv"
+          },
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      },
+      {
+        "position": {
+          "x": 331.9989128575723,
+          "y": 1791.7158934014944
+        },
+        "width": 256,
+        "height": 100,
+        "dragHandle": ".drag-handle__custom",
+        "selected": false,
+        "id": "uv0vb4o9s9x0s698nuv1fhpb",
+        "type": "display",
+        "data": {
+          "description": "Logs the input data to the console.",
+          "showRunningStatus": false,
+          "_morphing": false,
+          "name": "media-log",
+          "label": "Log10",
+          "inputs": {
+            "input": {
+              "label": "Input"
+            }
+          },
+          "outputs": {
+            "success": {
+              "label": "Success",
+              "isConnectable": false
+            }
+          },
+          "parameters": {},
+          "defaultOutput": null
+        },
+        "inputs": null,
+        "outputs": null
+      }
+    ],
+    "connections": [
+      {
+        "type": "directed",
+        "id": "whepm1usty95jea7wwj6205a",
+        "data": {
+          "isAnimated": false
+        },
+        "selected": false,
+        "source": "050c74a4-0b14-4d66-81ec-772bb6f48162",
+        "target": "71318faf-3ff6-4c82-bbdd-8d468b7bdadd",
+        "sourceHandle": "success",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "z5zao2ww7kpmt6ru8xbi8tfj",
+        "data": {
+          "isAnimated": false
+        },
+        "selected": false,
+        "source": "050c74a4-0b14-4d66-81ec-772bb6f48162",
+        "target": "7994f0c3-f6cf-4553-aaa6-e6fd35527bfa",
+        "sourceHandle": "success",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "jxchj2r9mit4hb0oi87x3tkm",
+        "data": {
+          "isAnimated": false
+        },
+        "selected": false,
+        "source": "71318faf-3ff6-4c82-bbdd-8d468b7bdadd",
+        "target": "f786ff80-03a7-433a-a5d3-a09687b2b1c3",
+        "sourceHandle": "success",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "q1w7t2q1fpaf148pvb8xbf1t",
+        "data": {
+          "isAnimated": false
+        },
+        "selected": false,
+        "source": "71318faf-3ff6-4c82-bbdd-8d468b7bdadd",
+        "target": "7eff9067-4479-4ec2-80e3-fe134f5b8590",
+        "sourceHandle": "success",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "a2rjh00o8hn7qqq7cfzghsi4",
+        "data": {
+          "isAnimated": false
+        },
+        "selected": false,
+        "source": "7eff9067-4479-4ec2-80e3-fe134f5b8590",
+        "target": "07c123e2-9db4-4e09-b1ce-584e64bdaf42",
+        "sourceHandle": "true",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "dk00h0vojc8qq6n9k22hfl5h",
+        "data": {
+          "isAnimated": false
+        },
+        "selected": false,
+        "source": "7eff9067-4479-4ec2-80e3-fe134f5b8590",
+        "target": "556293bc-1012-443c-bde8-34dd1d900356",
+        "sourceHandle": "false",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__uppegeibyu8aaqke0geulc0gsuccess-o5wl70fkgmd5rm5dkjnprxxyinput",
+        "data": {
+          "isAnimated": false
+        },
+        "selected": false,
+        "source": "7005a25d-63a2-4c04-bb96-004e264f0de3",
+        "target": "050c74a4-0b14-4d66-81ec-772bb6f48162",
+        "sourceHandle": "success",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__vvucpr9bc8hx8nuzcw7k2cnptrue-iiw93alitvnilmzh3jersugvinput",
+        "data": {
+          "isAnimated": false
+        },
+        "selected": false,
+        "source": "7eff9067-4479-4ec2-80e3-fe134f5b8590",
+        "target": "12cb2a3d-0b17-4a62-aca8-1ed5a54b6297",
+        "sourceHandle": "true",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__qjla0sl0s01gkg95p16866yusuccess-em8l6y1ndi0m19lup3r5qt9jinput",
+        "data": {
+          "isAnimated": false
+        },
+        "source": "dd0857c2-83a2-4c77-8eb5-2edeac87d7d0",
+        "target": "a632d705-effc-40ef-9413-608b0ca59d73",
+        "sourceHandle": "success",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__qjla0sl0s01gkg95p16866yusuccess-l5i8el70o9na90hmn5uhypkuinput",
+        "data": {
+          "isAnimated": false
+        },
+        "source": "dd0857c2-83a2-4c77-8eb5-2edeac87d7d0",
+        "target": "5cf7c78f-9504-4153-a201-8adf5c8eefc7",
+        "sourceHandle": "success",
+        "targetHandle": "input"
+      },
+      {
+        "type": "agentConnection",
+        "id": "xy-edge__ldyi5jfb5hj0m6cum5jsm6hqllm-l5i8el70o9na90hmn5uhypkullm",
+        "data": {
+          "isAnimated": false
+        },
+        "source": "82e0d67d-d4a6-4fee-9f0b-122bb63ffebb",
+        "target": "5cf7c78f-9504-4153-a201-8adf5c8eefc7",
+        "sourceHandle": "llm",
+        "targetHandle": "llm"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__l5i8el70o9na90hmn5uhypkusuccess-tjvdka4hsdgiw61kz0x4uh7oinput",
+        "data": {
+          "isAnimated": false
+        },
+        "source": "5cf7c78f-9504-4153-a201-8adf5c8eefc7",
+        "target": "9aa013c5-5ac1-44fd-9b0e-9eba20ae3aa9",
+        "sourceHandle": "success",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__tjvdka4hsdgiw61kz0x4uh7osuccess-r65zvtfousymqx6y8e3u7zo7input",
+        "data": {
+          "isAnimated": false
+        },
+        "source": "9aa013c5-5ac1-44fd-9b0e-9eba20ae3aa9",
+        "target": "709c2771-d1af-4b06-96c1-ccf4b657882f",
+        "sourceHandle": "success",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__tjvdka4hsdgiw61kz0x4uh7osuccess-d3d47sffveyeamwacdelizp5input",
+        "data": {
+          "isAnimated": false
+        },
+        "source": "9aa013c5-5ac1-44fd-9b0e-9eba20ae3aa9",
+        "target": "be00e544-f7f4-47ab-a312-3cc9d73c3026",
+        "sourceHandle": "success",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__tjvdka4hsdgiw61kz0x4uh7osuccess-pxpe24snr1wf15ebalr8x565input",
+        "data": {
+          "isAnimated": false
+        },
+        "source": "9aa013c5-5ac1-44fd-9b0e-9eba20ae3aa9",
+        "target": "718f7fa1-796c-4d5f-8c57-d29603ccfec0",
+        "sourceHandle": "success",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__pxpe24snr1wf15ebalr8x565case-1-gc3q07rxe93t7v0kdezqe2b5input",
+        "data": {
+          "isAnimated": false
+        },
+        "source": "718f7fa1-796c-4d5f-8c57-d29603ccfec0",
+        "target": "16c809a1-d453-4db2-a282-82f82117c459",
+        "sourceHandle": "case-1",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__pxpe24snr1wf15ebalr8x565case-2-raywtv37mbhqw625ad8dcgkfinput",
+        "data": {
+          "isAnimated": false
+        },
+        "source": "718f7fa1-796c-4d5f-8c57-d29603ccfec0",
+        "target": "cc29f4e6-f41c-4c2a-928c-f51c07014257",
+        "sourceHandle": "case-2",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__pxpe24snr1wf15ebalr8x565case-1-wum4ozu3e2v8gqvkahsz2exjinput",
+        "data": {
+          "isAnimated": false
+        },
+        "source": "718f7fa1-796c-4d5f-8c57-d29603ccfec0",
+        "target": "c9a27c94-ed28-4147-a29f-cb3ee86bd759",
+        "sourceHandle": "case-1",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__ejjsbexq1y4x41ammfnqjd6csuccess-rykqojggrfvhd7kyb2wkf0nwinput",
+        "data": {
+          "isAnimated": false
+        },
+        "selected": false,
+        "source": "ed9a100d-4030-4367-a6e3-c1e2611044f8",
+        "target": "0d00a4c6-e11b-45dd-8fc7-a8282ffe337f",
+        "sourceHandle": "success",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__mq34c7n7trcb1opp6bx14agxsuccess-rb1wxd41i3zvcpgcqqz3ydh6input",
+        "data": {
+          "isAnimated": false
+        },
+        "selected": false,
+        "source": "e24e93cf-e058-4e5e-bf71-60b8526c1eeb",
+        "target": "967b3e23-c11b-4b47-b6a0-e992170b8606",
+        "sourceHandle": "success",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__w8txc8kp191i57x05onwk5vusuccess-p5tctu1l4116d1abaq8k9k8finput",
+        "data": {
+          "isAnimated": false
+        },
+        "selected": false,
+        "source": "4419f62e-0805-4e8c-8477-147ef13f21a9",
+        "target": "0f181c83-9f08-4838-9bea-9aec56fb3cea",
+        "sourceHandle": "success",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__w8txc8kp191i57x05onwk5vusuccess-yyffl84o2flqb0etwx12izziinput",
+        "data": {
+          "isAnimated": false
+        },
+        "selected": false,
+        "source": "4419f62e-0805-4e8c-8477-147ef13f21a9",
+        "target": "cf51d51a-483d-4953-8415-5ba7bea9f73a",
+        "sourceHandle": "success",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__ejjsbexq1y4x41ammfnqjd6csuccess-e4dfrhaimcr4jkol3t0krdcfinput",
+        "data": {
+          "isAnimated": false
+        },
+        "selected": false,
+        "source": "ed9a100d-4030-4367-a6e3-c1e2611044f8",
+        "target": "1ef5caed-706b-4c22-a92e-51447abf015f",
+        "sourceHandle": "success",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__mq34c7n7trcb1opp6bx14agxsuccess-f94vsk6v7k778abnw6q4omkdinput",
+        "data": {
+          "isAnimated": false
+        },
+        "selected": false,
+        "source": "e24e93cf-e058-4e5e-bf71-60b8526c1eeb",
+        "target": "2a2196b5-9848-424b-a5bf-d3126b0d3b67",
+        "sourceHandle": "success",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__f94vsk6v7k778abnw6q4omkdsuccess-w8txc8kp191i57x05onwk5vuinput1",
+        "data": {
+          "isAnimated": false
+        },
+        "selected": false,
+        "source": "2a2196b5-9848-424b-a5bf-d3126b0d3b67",
+        "target": "4419f62e-0805-4e8c-8477-147ef13f21a9",
+        "sourceHandle": "success",
+        "targetHandle": "input1"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__e4dfrhaimcr4jkol3t0krdcfsuccess-w8txc8kp191i57x05onwk5vuinput2",
+        "data": {
+          "isAnimated": false
+        },
+        "selected": false,
+        "source": "1ef5caed-706b-4c22-a92e-51447abf015f",
+        "target": "4419f62e-0805-4e8c-8477-147ef13f21a9",
+        "sourceHandle": "success",
+        "targetHandle": "input2"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__yyffl84o2flqb0etwx12izzisuccess-evg82epun9vup0irml9kc7itinput",
+        "data": {
+          "isAnimated": false
+        },
+        "selected": false,
+        "source": "cf51d51a-483d-4953-8415-5ba7bea9f73a",
+        "target": "8dd2d08f-c5e8-4d4b-a987-6fc3a68ca811",
+        "sourceHandle": "success",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__llegs1jrtcvsgua0mwph28o2success-kf7u7jwz0ttsqbdf2uhd9p51input",
+        "data": {
+          "isAnimated": false
+        },
+        "selected": false,
+        "source": "e87ed451-8e8a-4e1f-b039-15c19bd54aa4",
+        "target": "679d8f4e-ed5d-4865-ad1a-571d476d7b5d",
+        "sourceHandle": "success",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__llegs1jrtcvsgua0mwph28o2success-fl047oc2v0085aejgid4bn9ainput",
+        "data": {
+          "isAnimated": false
+        },
+        "selected": false,
+        "source": "e87ed451-8e8a-4e1f-b039-15c19bd54aa4",
+        "target": "d17c483f-1c6e-4aee-b232-341fa1e5d80d",
+        "sourceHandle": "success",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__fl047oc2v0085aejgid4bn9asuccess-rea8csi4ufcqy3817tbkw1rkinput",
+        "data": {
+          "isAnimated": false
+        },
+        "selected": false,
+        "source": "d17c483f-1c6e-4aee-b232-341fa1e5d80d",
+        "target": "e1e2bcf9-f34e-4fab-b435-1efccf83d127",
+        "sourceHandle": "success",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__rea8csi4ufcqy3817tbkw1rktrue-t9snyb5ngsh6u4umqqc17jtiinput",
+        "data": {
+          "isAnimated": false
+        },
+        "selected": false,
+        "source": "e1e2bcf9-f34e-4fab-b435-1efccf83d127",
+        "target": "b96c2e9e-d661-42a5-bd79-f163f5b9129e",
+        "sourceHandle": "true",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__t9snyb5ngsh6u4umqqc17jtisuccess-td7hc0tq8acpz20teslekjlpinput",
+        "data": {
+          "isAnimated": false
+        },
+        "selected": false,
+        "source": "b96c2e9e-d661-42a5-bd79-f163f5b9129e",
+        "target": "c9c91be7-97f8-4420-956f-a1a19a7f5d9e",
+        "sourceHandle": "success",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__rea8csi4ufcqy3817tbkw1rkfalse-f16z8qrzanwayl4xtzd760v3input",
+        "data": {
+          "isAnimated": false
+        },
+        "selected": false,
+        "source": "e1e2bcf9-f34e-4fab-b435-1efccf83d127",
+        "target": "9523fed7-56ce-4124-ac5f-b78047af5714",
+        "sourceHandle": "false",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__f16z8qrzanwayl4xtzd760v3success-dkch6qvaz785pk8hr1w6ga2binput",
+        "data": {
+          "isAnimated": false
+        },
+        "selected": false,
+        "source": "9523fed7-56ce-4124-ac5f-b78047af5714",
+        "target": "152a493b-bc92-4b21-9f88-7fd4faccc12d",
+        "sourceHandle": "success",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__t9snyb5ngsh6u4umqqc17jtisuccess-z65r9y6giut4diyca21ksxt3input",
+        "data": {
+          "isAnimated": false
+        },
+        "selected": false,
+        "source": "b96c2e9e-d661-42a5-bd79-f163f5b9129e",
+        "target": "0c56c9f6-9ba2-4303-8c15-c40871767f8b",
+        "sourceHandle": "success",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__9aa013c5-5ac1-44fd-9b0e-9eba20ae3aa9success-q3g3jchg4hld8m9dtooi3cgpinput",
+        "data": {
+          "isAnimated": false
+        },
+        "source": "9aa013c5-5ac1-44fd-9b0e-9eba20ae3aa9",
+        "target": "q3g3jchg4hld8m9dtooi3cgp",
+        "sourceHandle": "success",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__q3g3jchg4hld8m9dtooi3cgptrue-iu1bw0pnlozoux28ylg33k8linput",
+        "data": {
+          "isAnimated": false
+        },
+        "source": "q3g3jchg4hld8m9dtooi3cgp",
+        "target": "iu1bw0pnlozoux28ylg33k8l",
+        "sourceHandle": "true",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__vcd9ocq63bmgr62p0wvmkzl4success-htujs73hbb1qcm4decbes1nminput",
+        "data": {
+          "isAnimated": false
+        },
+        "source": "vcd9ocq63bmgr62p0wvmkzl4",
+        "target": "htujs73hbb1qcm4decbes1nm",
+        "sourceHandle": "success",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__dktbk71q760fyr3arz54m0c2success-vcd9ocq63bmgr62p0wvmkzl4input",
+        "data": {
+          "isAnimated": false
+        },
+        "source": "dktbk71q760fyr3arz54m0c2",
+        "target": "vcd9ocq63bmgr62p0wvmkzl4",
+        "sourceHandle": "success",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__qe4xc8o53cqu0uptzk9gtnn2success-vcd9ocq63bmgr62p0wvmkzl4input",
+        "data": {
+          "isAnimated": false
+        },
+        "source": "qe4xc8o53cqu0uptzk9gtnn2",
+        "target": "vcd9ocq63bmgr62p0wvmkzl4",
+        "sourceHandle": "success",
+        "targetHandle": "input"
+      },
+      {
+        "type": "directed",
+        "id": "xy-edge__dktbk71q760fyr3arz54m0c2success-uv0vb4o9s9x0s698nuv1fhpbinput",
+        "data": {
+          "isAnimated": false
+        },
+        "source": "dktbk71q760fyr3arz54m0c2",
+        "target": "uv0vb4o9s9x0s698nuv1fhpb",
+        "sourceHandle": "success",
+        "targetHandle": "input"
+      }
+    ],
+    "status": "stopped",
+    "id": "099037e3-fde7-429e-8013-e072552844f9",
+    "createdAt": 1777048063497,
+    "updatedAt": "2026-04-24T22:44:30.362Z",
+    "previousStatus": "running"
+  }
+]
