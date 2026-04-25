@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Patients - Temps réel</title>
+    <!-- Chart.js pour les graphiques -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+            background: #f0f2f5;
+            padding: 24px;
+        }
+
+        .dashboard-container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        /* En-tête */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        h1 {
+            font-size: 1.8rem;
+            color: #1e293b;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .status-badge {
+            background: #10b981;
+            color: white;
+            border-radius: 40px;
+            padding: 6px 16px;
+            font-size: 0.85rem;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-badge.offline {
+            background: #ef4444;
+        }
+
+        /* Grille des KPI */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 20px;
+            margin-bottom: 32px;
+        }
+
+        .kpi-card {
+            background: white;
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            transition: transform 0.2s;
+        }
+
+        .kpi-card:hover {
+            transform: translateY(-4px);
+        }
+
+        .kpi-title {
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: #64748b;
+            margin-bottom: 12px;
+        }
+
+        .kpi-value {
+            font-size: 2.4rem;
+            font-weight: 700;
+            color: #0f172a;
+        }
+
+        .kpi-unit {
+            font-size: 1rem;
+            font-weight: 400;
+            color: #475569;
+        }
+
+        /* Double colonne : graphique + tableau */
+        .two-columns {
+            display: flex;
+            gap: 24px;
+            flex-wrap: wrap;
+            margin-bottom: 32px;
+        }
+
+        .chart-card {
+            flex: 1;
+            min-width: 280px;
+            background: white;
+            border-radius: 20px;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+
+        .table-wrapper {
+            flex: 2;
+            background: white;
+            border-radius: 20px;
+            padding: 16px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            overflow-x: auto;
+        }
+
+        .section-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: #1e293b;
+            border-left: 4px solid #3b82f6;
+            padding-left: 12px;
+        }
+
+        /* Tableau épuré */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+
+        th {
+            text-align: left;
+            padding: 12px 8px;
+            background-color: #f8fafc;
+            color: #334155;
+            font-weight: 600;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        td {
+            padding: 10px 8px;
+            border-bottom: 1px solid #eef2ff;
+            color: #1e293b;
+        }
+
+        tr:hover {
+            background-color: #fef9c3;
+        }
+
+        .badge-blood {
+            background: #dbeafe;
+            color: #1e40af;
+            border-radius: 40px;
+            padding: 4px 10px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            display: inline-block;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 32px;
+            font-size: 0.75rem;
+            color: #94a3b8;
+        }
+
+        @media (max-width: 768px) {
+            body { padding: 16px; }
+            .kpi-value { font-size: 1.8rem; }
+        }
+    </style>
+    <!-- Socket.io client (servi par le serveur) -->
+    <script src="/socket.io/socket.io.js"></script>
+<div class="header">
+    <h1>📊 Tableau de bord des patients</h1>
+    <div style="display: flex; gap: 16px; align-items: center;">
+        <a href="/" style="text-decoration: none; background: #3b82f6; color: white; padding: 8px 20px; border-radius: 40px; font-weight: 500;">Patients</a>
+        <a href="/workflows.html" style="text-decoration: none; background: #e2e8f0; color: #1e293b; padding: 8px 20px; border-radius: 40px; font-weight: 500;">Workflows</a>
+        <div class="status-badge" id="statusBadge">🟢 Connecté - Temps réel</div>
+    </div>
+</div>
+
+    <!-- KPI dynamiques -->
+    <div class="kpi-grid" id="kpiContainer">
+        <div class="kpi-card"><div class="kpi-title">Patients uniques</div><div class="kpi-value" id="totalPatients">-</div></div>
+        <div class="kpi-card"><div class="kpi-title">Âge moyen</div><div class="kpi-value" id="avgAge">-<span class="kpi-unit"> ans</span></div></div>
+        <div class="kpi-card"><div class="kpi-title">Âge min</div><div class="kpi-value" id="minAge">-</div></div>
+        <div class="kpi-card"><div class="kpi-title">Âge max</div><div class="kpi-value" id="maxAge">-</div></div>
+    </div>
+
+    <!-- Graphique + tableau -->
+    <div class="two-columns">
+        <div class="chart-card">
+            <div class="section-title">🩸 Groupe sanguin</div>
+            <canvas id="bloodChart" width="400" height="300" style="max-height: 300px;"></canvas>
+        </div>
+        <div class="table-wrapper">
+            <div class="section-title">📋 Liste des patients (uniques, dernier enregistrement)</div>
+            <div id="patientsTable">
+                <div style="text-align:center; padding: 30px;">Chargement des données...</div>
+            </div>
+        </div>
+    </div>
+    <footer>⚡ Mise à jour automatique dès insertion dans la base • Dédoublonné par CIN</footer>
+</div>
+
+<script>
+    let bloodChart = null;
+    let currentPatients = [];
+
+    const socket = io();
+
+    socket.on('connect', () => {
+        document.getElementById('statusBadge').innerHTML = '🟢 Connecté - Temps réel';
+        document.getElementById('statusBadge').classList.remove('offline');
+    });
+
+    socket.on('disconnect', () => {
+        document.getElementById('statusBadge').innerHTML = '🔴 Déconnecté - Reconnexion...';
+        document.getElementById('statusBadge').classList.add('offline');
+    });
+
+    socket.on('dashboard-update', (patients) => {
+        console.log('Mise à jour temps réel, patients:', patients.length);
+        currentPatients = patients;
+        renderDashboard(patients);
+    });
+
+    // Fonction principale : calcule KPI, met à jour tableau et graphique
+    function renderDashboard(patients) {
+        if (!patients || patients.length === 0) {
+            document.getElementById('totalPatients').innerText = '0';
+            document.getElementById('avgAge').innerHTML = '0<span class="kpi-unit"> ans</span>';
+            document.getElementById('minAge').innerText = '-';
+            document.getElementById('maxAge').innerText = '-';
+            document.getElementById('patientsTable').innerHTML = '<div style="padding:20px; text-align:center;">Aucun patient trouvé.</div>';
+            if (bloodChart) bloodChart.destroy();
+            return;
+        }
+
+        // 1. Calcul des KPI
+        const ages = patients.map(p => parseInt(p.age)).filter(a => !isNaN(a));
+        const total = patients.length;
+        const avg = ages.length ? (ages.reduce((a,b) => a+b,0) / ages.length).toFixed(1) : 0;
+        const minAge = ages.length ? Math.min(...ages) : '-';
+        const maxAge = ages.length ? Math.max(...ages) : '-';
+
+        document.getElementById('totalPatients').innerText = total;
+        document.getElementById('avgAge').innerHTML = `${avg}<span class="kpi-unit"> ans</span>`;
+        document.getElementById('minAge').innerText = minAge;
+        document.getElementById('maxAge').innerText = maxAge;
+
+        // 2. Répartition groupe sanguin
+        const bloodCount = {};
+        patients.forEach(p => {
+            const group = p.groupe_sanguin || 'Inconnu';
+            bloodCount[group] = (bloodCount[group] || 0) + 1;
+        });
+        updateBloodChart(bloodCount);
+
+        // 3. Tableau HTML (dédoublonné déjà par la requête SQL DISTINCT ON)
+        let html = `<table>
+            <thead>
+                <tr><th>CIN</th><th>Nom</th><th>Âge</th><th>Email</th><th>Téléphone</th><th>Groupe</th><th>Antécédents</th><th>Allergies</th></tr>
+            </thead>
+            <tbody>`;
+        for (const p of patients) {
+            html += `<tr>
+                <td>${escapeHtml(p.cin || '—')}</td>
+                <td>${escapeHtml(p.nom || '—')}</td>
+                <td>${escapeHtml(p.age)}</td>
+                <td>${escapeHtml(p.email || '—')}</td>
+                <td>${escapeHtml(p.telephone || '—')}</td>
+                <td><span class="badge-blood">${escapeHtml(p.groupe_sanguin || '—')}</span></td>
+                <td>${truncate(escapeHtml(p.antecedents || '—'), 50)}</td>
+                <td>${truncate(escapeHtml(p.allergies || '—'), 40)}</td>
+            </tr>`;
+        }
+        html += `</tbody></table>`;
+        document.getElementById('patientsTable').innerHTML = html;
+    }
+
+    function updateBloodChart(bloodCount) {
+        const labels = Object.keys(bloodCount);
+        const data = Object.values(bloodCount);
+        const ctx = document.getElementById('bloodChart').getContext('2d');
+        if (bloodChart) bloodChart.destroy();
+        bloodChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: data,
+                    backgroundColor: ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec489a'],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: { position: 'bottom' },
+                    tooltip: { callbacks: { label: (ctx) => `${ctx.label}: ${ctx.raw} patient(s)` } }
+                }
+            }
+        });
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return String(str).replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
+    }
+
+    function truncate(str, len) {
+        if (!str) return '—';
+        return str.length > len ? str.substring(0, len) + '…' : str;
+    }
+
+    // Fallback HTTP initial (si socket tarde)
+    fetch('/api/dashboard')
+        .then(r => r.json())
+        .then(data => {
+            if (data && data.length) renderDashboard(data);
+        })
+        .catch(e => console.warn("Fallback API error", e));
+</script>
+</body>
+</html>

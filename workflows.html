@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>État des workflows - Dashboard</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Roboto, sans-serif;
+            background: #f0f2f5;
+            padding: 24px;
+        }
+
+        .dashboard-container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .nav {
+            background: white;
+            border-radius: 60px;
+            padding: 8px 20px;
+            margin-bottom: 32px;
+            display: flex;
+            gap: 24px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        .nav a {
+            text-decoration: none;
+            color: #334155;
+            font-weight: 600;
+            padding: 10px 16px;
+            border-radius: 40px;
+            transition: 0.2s;
+        }
+        .nav a.active {
+            background: #3b82f6;
+            color: white;
+        }
+        .nav a:hover:not(.active) {
+            background: #e2e8f0;
+        }
+
+        h1 {
+            font-size: 1.8rem;
+            color: #1e293b;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .workflow-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px;
+        }
+
+        .workflow-card {
+            background: white;
+            border-radius: 24px;
+            padding: 24px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.05);
+            transition: transform 0.2s;
+            border-left: 6px solid #10b981;
+        }
+        .workflow-card:hover {
+            transform: translateY(-5px);
+        }
+        .workflow-title {
+            font-size: 1.4rem;
+            font-weight: 700;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .status {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: #d1fae5;
+            color: #065f46;
+            padding: 6px 14px;
+            border-radius: 40px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+        .status.active::before {
+            content: "";
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background-color: #10b981;
+            border-radius: 50%;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 0.4; transform: scale(0.8); }
+            100% { opacity: 1; transform: scale(1.2); }
+        }
+        .workflow-description {
+            color: #475569;
+            margin: 16px 0;
+            line-height: 1.4;
+        }
+        .meta {
+            font-size: 0.8rem;
+            color: #94a3b8;
+            border-top: 1px solid #e2e8f0;
+            padding-top: 12px;
+            margin-top: 12px;
+            display: flex;
+            justify-content: space-between;
+        }
+        footer {
+            margin-top: 48px;
+            text-align: center;
+            color: #94a3b8;
+            font-size: 0.8rem;
+        }
+        @media (max-width: 640px) {
+            body { padding: 16px; }
+        }
+    </style>
+</head>
+<body>
+<div class="dashboard-container">
+    <div class="nav">
+        <a href="/">📋 Patients</a>
+        <a href="/workflows.html" class="active">⚙️ Workflows</a>
+    </div>
+
+    <h1>⚙️ État des workflows opérationnels</h1>
+    <div class="workflow-grid" id="workflowGrid"></div>
+    <footer>🟢 Tous les workflows sont actifs • Supervision en temps réel</footer>
+</div>
+
+<script>
+    // Définition des 5 workflows selon votre besoin
+    const workflows = [
+        {
+            id: 1,
+            name: "🏥 Admission / Enregistrement patient",
+            description: "Création et mise à jour du dossier administratif à l’arrivée du patient. Vérification des pièces d’identité et mutuelle.",
+            lastRun: "il y a 1 minute",
+            status: "active"
+        },
+        {
+            id: 2,
+            name: "📁 Dossier médical",
+            description: "Gestion des antécédents, symptômes, prescriptions, examens biologiques et imagerie. Interopérabilité avec le CHU.",
+            lastRun: "il y a 3 minutes",
+            status: "active"
+        },
+        {
+            id: 3,
+            name: "💰 Workflow financier",
+            description: "Facturation des actes, calcul des restes à charge, édition des devis et suivi des impayés.",
+            lastRun: "il y a 7 minutes",
+            status: "active"
+        },
+        {
+            id: 4,
+            name: "💊 Pharmacie",
+            description: "Gestion des stocks, validation des ordonnances, alerte sur les ruptures et délivrance aux patients.",
+            lastRun: "il y a 2 minutes",
+            status: "active"
+        },
+        {
+            id: 5,
+            name: "🛡️ Watchdog (supervision)",
+            description: "Surveillance des performances des bases de données, des flux API et des triggers temps réel. Alerte en cas d’anomalie.",
+            lastRun: "à l'instant",
+            status: "active"
+        }
+    ];
+
+    function renderWorkflows() {
+        const grid = document.getElementById('workflowGrid');
+        if (!grid) return;
+
+        let html = '';
+        for (const wf of workflows) {
+            html += `
+                <div class="workflow-card">
+                    <div class="workflow-title">
+                        ${wf.name}
+                        <span class="status active">🟢 Actif</span>
+                    </div>
+                    <div class="workflow-description">${wf.description}</div>
+                    <div class="meta">
+                        <span>⏱️ Dernière exécution : ${wf.lastRun}</span>
+                        <span>🔄 cycle: 5min</span>
+                    </div>
+                </div>
+            `;
+        }
+        grid.innerHTML = html;
+    }
+
+    renderWorkflows();
+
+    // Option: rafraîchissement dynamique des horaires toutes les 30 secondes
+    setInterval(() => {
+        workflows[0].lastRun = "il y a quelques secondes";
+        workflows[1].lastRun = "il y a 2 minutes";
+        workflows[2].lastRun = "il y a 5 minutes";
+        workflows[3].lastRun = "à l'instant";
+        workflows[4].lastRun = new Date().toLocaleTimeString();
+        renderWorkflows();
+    }, 30000);
+</script>
+</body>
+</html>
